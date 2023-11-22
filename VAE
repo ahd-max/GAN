@@ -1,0 +1,132 @@
+import tensorflow as tf
+from tensorflow.keras import layers
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import numpy as np
+import os
+import sys
+import random
+import numpy as np
+import pandas as pd
+from pandas import DataFrame
+import math
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+import scipy.io 
+from tensorflow.keras.layers import Input, Dense, Conv2D, Flatten, Reshape, Conv2DTranspose, Lambda
+from tensorflow.keras.models import Model
+from tensorflow.keras import backend as K
+from tensorflow.keras.losses import binary_crossentropy
+from tensorflow import keras
+from tensorflow.keras import layers
+
+# 定义编码器
+def build_encoder(input_shape, latent_dim):
+    inputs = Input(shape=input_shape)
+    x = Conv2D(32, kernel_size=3, activation='relu', strides=(2, 2), padding='same')(inputs)
+    x = Conv2D(64, kernel_size=3, activation='relu', strides=(2, 2), padding='same')(x)
+    x = Conv2D(128, kernel_size=3, activation='relu', strides=(2, 2), padding='same')(x)
+    x = Conv2D(256, kernel_size=3, activation='relu', strides=(2, 2), padding='same')(x)
+    x = Flatten()(x)
+    z_mean = Dense(latent_dim)(x)
+    z_log_var = Dense(latent_dim)(x)
+
+    return Model(inputs, [z_mean, z_log_var])
+
+# 定义解码器
+def build_decoder(latent_dim):
+    decoder_h = Dense(8 * 8 * 256, activation='relu')
+    decoder_h_reshape = Reshape((8, 8, 256))
+    decoder_conv_transpose_1 = Conv2DTranspose(128, kernel_size=3, activation='relu', strides=(2, 2), padding='same')
+    decoder_conv_transpose_2 = Conv2DTranspose(64, kernel_size=3, activation='relu', strides=(2, 2), padding='same')
+    decoder_conv_transpose_3 = Conv2DTranspose(32, kernel_size=3, activation='relu', strides=(2, 2), padding='same')
+    decoder_conv_transpose_4 = Conv2DTranspose(16, kernel_size=3, activation='relu', strides=(2, 2), padding='same')
+
+    decoder_output = Conv2DTranspose(1, kernel_size=3, activation='sigmoid', padding='same')
+
+    inputs = Input(shape=(latent_dim,))
+    h_decoded = decoder_h(inputs)
+    h_decoded_reshape = decoder_h_reshape(h_decoded)
+    x_decoded = decoder_conv_transpose_1(h_decoded_reshape)
+    x_decoded = decoder_conv_transpose_2(x_decoded)
+    x_decoded = decoder_conv_transpose_3(x_decoded)
+    x_decoded = decoder_conv_transpose_4(x_decoded)
+    x_decoded_mean = decoder_output(x_decoded)
+
+    return Model(inputs, x_decoded_mean)
+
+# 定义VAE模型
+def build_vae(encoder, decoder):
+    inputs = Input(shape=input_shape)
+    z_mean, z_log_var = encoder(inputs)
+    
+    # 采样函数
+    def sampling(args):
+        z_mean, z_log_var = args
+        batch = K.shape(z_mean)[0]
+        dim = K.int_shape(z_mean)[1]
+        epsilon = K.random_normal(shape=(batch, dim))
+        return z_mean + K.exp(0.5 * z_log_var) * epsilon
+
+    z = Lambda(sampling, output_shape=(latent_dim,))([z_mean, z_log_var])
+    x_decoded_mean = decoder(z)
+
+    # 结合编码器和解码器
+    vae = Model(inputs, x_decoded_mean)
+
+    # 定义VAE的损失函数
+    xent_loss = input_shape[0] * input_shape[1] * binary_crossentropy(K.flatten(inputs), K.flatten(x_decoded_mean))
+    kl_loss = -0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+    vae_loss = K.mean(xent_loss + kl_loss)
+
+    vae.add_loss(vae_loss)
+    vae.compile(optimizer='rmsprop')
+
+    # vae.compile(optimizer=keras.optimizers.Adam(learning_rate=0.00001, 
+    #                                             beta_1=0.5, beta_2=0.999, epsilon=1e-08))
+
+    return vae
+
+
+# 参数设置
+input_shape = (128, 128, 1)  # 输入图像的大小，假设是灰度图像
+latent_dim = 128  # 修改 latent_dim 的值可以改变生成的数据的特征数量
+
+# 创建编码器和解码器
+encoder = build_encoder(input_shape, latent_dim)
+decoder = build_decoder(latent_dim)
+
+encoder.summary()
+decoder.summary()
+# 创建VAE模型
+vae = build_vae(encoder, decoder)
+
+import scipy.io 
+mat_file1=r'D:\data\random_matricesN.mat'
+data= scipy.io.loadmat(mat_file1)
+sample=data['time_series_data']
+x_train=sample[:700]
+x_test=sample[700:]
+
+
+vae.fit(x_train, epochs=100, batch_size=35)
+
+generated_data = vae.predict(x_test)
+
+generated_imagedata=generated_data[3]
+
+result_array = np.concatenate(generated_imagedata, axis=1)
+
+plt.imshow(result_array, cmap='viridis')  # cmap是颜色映射，可以根据需要更改
+plt.colorbar()  # 显示颜色条
+plt.title('Matrix as Image')
+plt.show()
+
+
+
+
+
+
